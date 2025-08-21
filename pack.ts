@@ -1,41 +1,72 @@
-// This import statement gives you access to all parts of the Coda Packs SDK.
 import * as coda from "@codahq/packs-sdk";
 
-// This line creates your new Pack.
+import XlsxTemplate from "xlsx-template";
+
+// Jednoduchý polyfill TextDecoder pro sandboxované prostředí (Coda Pack)
+import { TextDecoder as NodeTextDecoder } from "util";
+if (typeof (globalThis as any).TextDecoder === "undefined") {
+  (globalThis as any).TextDecoder = NodeTextDecoder;
+}
+
 export const pack = coda.newPack();
 
-// Here, we add a new formula to this Pack.
-pack.addFormula({
-  // This is the name that will be called in the formula builder.
-  // Remember, your formula name cannot have spaces in it.
-  name: "Hello",
-  description: "A Hello World example.",
+// Povolit stahování příloh (Coda ukládá na coda.io domains)
+pack.addNetworkDomain("coda.io");
 
-  // If your formula requires one or more inputs, you’ll define them here.
-  // Here, we're creating a string input called “name”.
+
+pack.addFormula({
+  name: "GenerateXlsx",
+  description: "Vytvoří XLSX soubor ze šablony (Attachment) a JSON dat.",
   parameters: [
     coda.makeParameter({
+      type: coda.ParameterType.File,
+      name: "template",
+      description: "Šablona XLSX jako příloha (Attachment ve sloupci).",
+    }),
+    coda.makeParameter({
       type: coda.ParameterType.String,
-      name: "name",
-      description: "The name you would like to say hello to.",
+      name: "dataJson",
+      description: "JSON objekt s daty k dosazení do šablony.",
+    }),
+    coda.makeParameter({
+      type: coda.ParameterType.String,
+      name: "fileName",
+      description: "Název výsledného souboru (volitelné, default: output.xlsx).",
+      optional: true,
     }),
   ],
-
-  // The resultType defines what will be returned in your Coda doc. Here, we're
-  // returning a simple text string.
   resultType: coda.ValueType.String,
+  codaType: coda.ValueHintType.Attachment,
 
-  // These examples are shown to the user, to help them understand how to use
-  // the formula.
-  examples: [
-    { params: ["World"], result: "Hello World!" },
-    { params: ["Coda"], result: "Hello Coda!" },
-  ],
+  execute: async function ([template, dataJson, fileName], context) {
+    // 1. Stáhnout šablonu jako binární data
+    const response = await context.fetcher.fetch({
+      method: "GET",
+      url: template,
+      isBinaryResponse: true,
+      disableAuthentication: true,
+    });
+    const templateBuf = Buffer.from(response.body);
 
-  // Everything inside this execute statement will happen anytime your Coda
-  // formula is called in a doc. An array of all user inputs is always the 1st
-  // parameter.
-  execute: async function ([name], context) {
-    return "Hello " + name + "!";
+    // 2. Parse JSON
+    let data: any;
+    try {
+      data = JSON.parse(dataJson);
+    } catch (e) {
+      throw new coda.UserVisibleError("Neplatný JSON: " + e.message);
+    }
+
+
+  // 3. Vytvořit šablonu a dosadit data pomocí optilude/xlsx-template
+  const xlsxTemplate = new XlsxTemplate(templateBuf);
+  xlsxTemplate.substitute(1, data); // 1 = první list
+
+  // 4. Vygenerovat výsledek jako Buffer
+  const output: Buffer = Buffer.from(xlsxTemplate.generate(), 'base64');
+
+    // 5. Vrátit jako Attachment
+    let temporaryOutputUrl =
+      await context.temporaryBlobStorage.storeBlob(output, "base64", {downloadFilename : fileName});
+    return temporaryOutputUrl;
   },
 });

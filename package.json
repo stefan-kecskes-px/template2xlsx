@@ -10,7 +10,9 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@codahq/packs-sdk": "1.8.6"
+    "@codahq/packs-sdk": "1.8.6",
+    "@tormozz48/xlsx-template": "^1.0.4",
+    "xlsx-template": "^1.4.4"
   },
   "devDependencies": {
     "@types/chai": "4.3.20",
